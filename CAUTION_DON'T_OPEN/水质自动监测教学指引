@@ -1,0 +1,564 @@
+水质自动监测教学指引
+
+
+Blink -> 
+TDS -> TDS + LED 
+SD -> SD+TDS+LED
+
+1. Blink 代码
+
+#define LEDBUILTIN 13
+
+// the setup function runs once when you press reset or power the board
+void setup(){ 
+  // initialize digital pin LEDBUILTIN as an output.
+  pinMode(LEDBUILTIN, OUTPUT);
+}
+
+// the loop function runs over and over again forever
+void loop(){ 
+  digitalWrite(LEDBUILTIN, HIGH);   // turn the LED on (HIGH is the voltage level)
+  delay(2000);                       // wait for a second
+  
+  
+  digitalWrite(LEDBUILTIN, LOW);    // turn the LED off by making the voltage LOW
+  delay(1000);                       // wait for a second
+}
+知识点讲解：
+
+·1 Arduino代码以函数模块区分各功能。整段代码可分为
+  ·Part1 导入头文件【如 #include < hello_world.h>】或定义常量
+  ·Part2 setup()部分： 参数初始化，输入输出引脚初始化及监视串口波特率设置[如 digitalWrite(LEDBUILTIN, HIGH);】 注：该部分代码（命令）仅执行一次！！！
+  ·Part3 loop()部分：  读取针脚上输入设备的输入值，或者命令针脚上的输出设备执行操作 注：该部分代码（命令）循环执行直至程序被终止！！！
+  ·Part4 函数体部分：    一般代码最后是用来实现先前声明的函数的函数体
+·2 关键函数体简介
+  ·1 pinMode(anyPin, OUTPUT);
+     pinMode(anyPin, INPUT);
+      引脚模式设定：设定给出的引脚为输入或者输出，出现在setup()函数中
+  ·2 digitalWrite(anyPin, HIGH);
+      选择数字引脚，并输出高（低）电平信号[模拟引脚同理 ：）]，多出现在loop()函数中
+  ·3 delay(1000);
+      延时函数，单位为ms
+
+
+1. TDS
+
+
+#define TdsSensorPin A1
+#define VREF 5.0      // analog reference voltage(Volt) of the ADC
+#define SCOUNT  30           // sum of sample point
+int analogBuffer[SCOUNT];    // store the analog value in the array, read from ADC
+int analogBufferTemp[SCOUNT];
+int analogBufferIndex = 0,copyIndex = 0;
+float averageVoltage = 0,tdsValue = 0,temperature = 25;
+
+void setup()
+{
+    Serial.begin(115200);
+    pinMode(TdsSensorPin,INPUT);
+}
+
+void loop()
+{
+   static unsigned long analogSampleTimepoint = millis();
+   if(millis()-analogSampleTimepoint > 40U)     //every 40 milliseconds,read the analog value from the ADC
+   {
+     analogSampleTimepoint = millis();
+     analogBuffer[analogBufferIndex] = analogRead(TdsSensorPin);    //read the analog value and store into the buffer
+     analogBufferIndex++;
+     if(analogBufferIndex == SCOUNT) 
+         analogBufferIndex = 0;
+   }   
+   static unsigned long printTimepoint = millis();
+   if(millis()-printTimepoint > 800U)
+   {
+      printTimepoint = millis();
+      for(copyIndex=0;copyIndex<SCOUNT;copyIndex++)
+        analogBufferTemp[copyIndex]= analogBuffer[copyIndex];
+      averageVoltage = getMedianNum(analogBufferTemp,SCOUNT) * (float)VREF / 1024.0; // read the analog value more stable by the median filtering algorithm, and convert to voltage value
+      float compensationCoefficient=1.0+0.02*(temperature-25.0);    //temperature compensation formula: fFinalResult(25^C) = fFinalResult(current)/(1.0+0.02*(fTP-25.0));
+      float compensationVolatge=averageVoltage/compensationCoefficient;  //temperature compensation
+      tdsValue=(133.42*compensationVolatge*compensationVolatge*compensationVolatge - 255.86*compensationVolatge*compensationVolatge + 857.39*compensationVolatge)*0.5; //convert voltage value to tds value
+      //Serial.print("voltage:");
+      //Serial.print(averageVoltage,2);
+      //Serial.print("V   ");
+      Serial.print("TDS Value:");
+      Serial.print(tdsValue,0);
+      Serial.println("ppm");
+   }
+}
+int getMedianNum(int bArray[], int iFilterLen) 
+{
+      int bTab[iFilterLen];
+      for (byte i = 0; i<iFilterLen; i++)
+    bTab[i] = bArray[i];
+      int i, j, bTemp;
+      for (j = 0; j < iFilterLen - 1; j++) 
+      {
+    for (i = 0; i < iFilterLen - j - 1; i++) 
+          {
+      if (bTab[i] > bTab[i + 1]) 
+            {
+    bTemp = bTab[i];
+          bTab[i] = bTab[i + 1];
+    bTab[i + 1] = bTemp;
+       }
+    }
+      }
+      if ((iFilterLen & 1) > 0)
+  bTemp = bTab[(iFilterLen - 1) / 2];
+      else
+  bTemp = (bTab[iFilterLen / 2] + bTab[iFilterLen / 2 - 1]) / 2;
+      return bTemp;
+  }
+
+1. TDS+LED
+
+主要说明：如何把LED的程序融入TDS代码里，
+即如何利用输入数据做为控制输出的判断条件。
+
+
+define TdsSensorPin A1                                                                             //TDS传感器常量宏定义
+define VREF 5.0      // analog reference voltage(Volt) of the ADC
+define SCOUNT  30           // sum of sample point
+
+int LEDPin=12;                                                                                     //LED引脚定义
+
+                              //TDS实现相关函数声明，及其参数设置
+int analogBufferSCOUNT ();    // function is to store the analog value in the array, read from ADC
+int analogBufferTempSCOUNT ();
+int analogBufferIndex = 0,copyIndex = 0;
+float averageVoltage = 0,tdsValue = 0,temperature = 25;
+
+
+
+void setup()                                                  //setup()部分： 参数初始化，输入输出引脚初始化及监视串口波特率设置
+
+Serial.begin(115200);                                         //设置波特率为 115200
+pinMode(TdsSensorPin,INPUT);                                  //设置TDS所在引脚为信号输入
+pinMode(LEDPin,OUTPUT);                                       //设LED所在引脚为信号输出
+
+}
+
+void loop() {                                                  //loop()部分：  实现读取针脚上输入设备的输入值，并对其进一步操作
+
+   static unsigned long analogSampleTimepoint = millis();     //获取系统时间（Arduino程序开始时间）并赋值给analogSampleTimepoint
+   
+   if(millis()-analogSampleTimepoint > 40U){                  //每隔40ms从针脚读取TDS传感器的值, 并置于缓冲区
+ analogSampleTimepoint = millis();
+ analogBufferanalogBufferIndex () = analogRead(TdsSensorPin);    
+ analogBufferIndex if(analogBufferIndex == SCOUNT) 
+ analogBufferIndex = 0;
+   }   
+   static unsigned long printTimepoint = millis();
+   if(millis()-printTimepoint > 800U){                        //每隔800ms处理缓冲区内的数据，并在串口监视器输出
+   
+  printTimepoint = millis();
+  for(copyIndex=0;copyIndex<SCOUNT;copyIndexanalogBufferTempcopyIndex ()= analogBuffercopyIndex ();
+  averageVoltage = getMedianNum(analogBufferTemp,SCOUNT)  (float)VREF / 1024.0; // read the analog value more stable by the median filtering algorithm, and convert to voltage value
+  float compensationCoefficient=1.0+0.02(temperature-25.0);    //temperature compensation formula: fFinalResult(25^C) = fFinalResult(current)/(1.0+0.02(fTP-25.0));
+  float compensationVolatge=averageVoltage/compensationCoefficient;  //temperature compensation
+  tdsValue=(133.42compensationVolatgecompensationVolatgecompensationVolatge - 255.86compensationVolatgecompensationVolatge + 857.39compensationVolatge)0.5; //convert voltage value to tds value
+  
+
+  //Serial.print("voltage:");                                 //Serial.print("aString"); 该函数用于在串口监视器输出数据
+  //Serial.print(averageVoltage,2);                           //Serial.print(varible); 该函数用于输出变量的值
+  //Serial.print("V   ");
+  Serial.print("TDS Value:");
+  Serial.print(tdsValue,0);
+  Serial.println("ppm");
+  //
+  BLINK(tdsValue,LEDPin);//if tds >= 200 then turn on the light   //BLINK(tdsValue,LEDPin);该函数，用于在一定条件下点亮LED灯，
+                                                                  //此处设置条件为 tds传感器值大于200
+   }
+}
+                                                                  //函数体部分：    一般代码最后是用来实现先前声明的函数的函数体
+void BLINK(int tdsValue,int LEDPin)                               //实现BLINK的函数体
+  if(tdsValue>=160)
+digitalWrite(LEDPin,HIGH);
+  }else
+digitalWrite(LEDPin,LOW);
+}
+}
+
+
+int getMedianNum(int bArray (), int iFilterLen)                   //实现TDS传感器值读取换算的函数体
+
+  int bTabiFilterLen ();
+  for (byte i = 0; i<iFilterLen; ibTabi () = bArrayi ();
+  int i, j, bTemp;
+  for (j = 0; j < iFilterLen - 1; j  
+for (i = 0; i < iFilterLen - j - 1; i  
+  if (bTabi () > bTabi + 1 ()) 
+
+bTemp = bTabi ();
+  bTabi () = bTabi + 1 ();
+bTabi + 1 () = bTemp;
+   }
+}
+  }
+  if ((iFilterLen & 1) > 0)
+  bTemp = bTab(iFilterLen - 1) / 2 ();
+  else
+  bTemp = (bTabiFilterLen / 2 () + bTabiFilterLen / 2 - 1 ()) / 2;
+  return bTemp;
+}
+
+
+1. SD随机数
+主要说明：如何使用SD存储数据
+
+include <SPI.h>                                                               //导入头文件
+include <SD.h> 
+
+const int chipSelect = 4;                                                      //设置静态变量
+
+File dataFile;                                                                 //设置文件类型对象
+
+void setup() {                                                                 //setup()部分： 参数初始化，输入输出引脚初始化及监视串口波特率设置
+                                                                               //设置串口监视器波特率
+  Serial.begin(9600);
+
+  Serial.print("Initializing SD card...");                                     //在串口监视器中输出“Initializing SD card...”
+
+  // see if the card is present and can be initialized:                        //检查sd卡是否已接入，如未接入则报错
+  if (!SD.begin(chipSelect)) {
+    Serial.println("Card failed, or not present");
+    // don't do anything more:
+    return;
+  }
+  Serial.println("card initialized.");
+
+
+  // open the file in MicroSD card                                             //在sd卡中打开文件（如没有同名文件则新建）
+  dataFile = SD.open("datalog.csv", FILE_WRITE);                               
+  dataFile.println("This is a data log test code!");                           //在文件中写"This is a data log test code!"
+  dataFile.close();                                                            //关闭文件
+  
+}
+
+void loop() {                                                                  //loop()部分
+  
+  // make a string for assembling the data to log:                             //新建String类型变量用于向文件写入数据
+  String dataString = "";
+
+  static unsigned int value = 0;                                               //生成随机数
+  value = random(0,100);
+  
+
+  for (int i = 0; i < 3; i++) {                                                //向String类型变量写入数据，数据间用 ", " 分隔
+    dataString += String(value);
+    if (i < 2) {
+      dataString += ",";
+    }
+  }
+
+  dataFile = SD.open("datalog.csv", FILE_WRITE);                               //向文件写入数据，并同时输出到串口监视器
+  // if the file is available, write to it:
+  if (dataFile) {
+    dataFile.println(dataString);
+    dataFile.close();
+    // print to the serial port too:
+    Serial.println(dataString);
+  }
+  // if the file isn't open, pop up an error:
+  else {
+    Serial.println("error opening datalog.csv");                               //如未能打开文件，输出报错信息
+  }
+
+  delay(1000); // write data once per second                                   //延时1秒
+  
+}
+
+
+
+
+
+1. SD+TDS
+主要说明：如何将传感器读取的值写入sd卡储存
+  即如何利用任意输入数据替换上例中的随机数
+
+include <SPI.h>                                                                               //导入头文件
+include <SD.h>
+
+
+
+define TdsSensorPin A1                                                                       //TDS传感器常量宏定义
+define VREF 5.0      // analog reference voltage(Volt) of the ADC
+define SCOUNT  30           // sum of sample point
+int analogBufferSCOUNT ();    // store the analog value in the array, read from ADC
+int analogBufferTempSCOUNT ();
+int analogBufferIndex = 0,copyIndex = 0;
+float averageVoltage = 0,tdsValue = 0,temperature = 25;
+
+const int chipSelect = 4;                                                                     //设置sd卡静态变量
+
+File dataFile;                                                                                //设置文件类型对象
+
+
+void setup()                                                                    //setup()部分： 参数初始化，输入输出引脚初始化及监视串口波特率设置
+Serial.begin(115200);                                                           //设置串口监视器波特率
+pinMode(TdsSensorPin,INPUT);                                                    //设置传感器针脚
+
+
+
+  Serial.print("Initializing SD card...");                                      //在串口输出“Initializing SD card...”
+
+  // see if the card is present and can be initialized:
+  if (!SD.begin(chipSelect)) 
+Serial.println("Card failed, or not present");                                  //检查sd卡是否已接入，如未接入则报错
+// don't do anything more:
+return;
+  }
+  Serial.println("card initialized.");
+
+
+  // open the file in MicroSD card
+  dataFile = SD.open("datalog.csv", FILEWRITE);                                 //在sd卡中打开文件（如没有同名文件则新建）
+  dataFile.print("TDS");                                                        //在文件中输入首行各项“TDS”及“BLABLA”  通过 ", " 分隔
+  dataFile.print(",");
+  dataFile.println("BLABLA");
+  dataFile.close();                                                             //关闭文件
+  
+}
+
+
+void loop()                                                                     //loop()部分
+  int value;                                                                    //设定变量获取TDS传感器读取到值
+
+  value=tdssensing();
+
+
+
+  // make a string for assembling the data to log:
+  String dataString = "";                                                        //新建String类型变量用于向文件写入数据
+
+  
+  
+dataString += String(value);                                                     //向String类型变量写入数据，数据间用 ", " 分隔
+
+dataString += ",";
+
+dataString += String("lalala");
+
+
+
+  dataFile = SD.open("datalog.csv", FILEWRITE);                                  //向文件写入数据，并同时输出到串口监视器
+  // if the file is available, write to it:
+  if (dataFile) 
+dataFile.println(dataString);
+dataFile.close();
+// print to the serial port too:
+Serial.println(dataString);
+  }
+  // if the file isn't open, pop up an error:                                    //如未能打开文件，输出报错信息
+  else 
+Serial.println("error opening datalog.csv");
+  }
+
+  delay(1000); // write data once per second                                     //延时1秒
+  
+}
+
+int tdssensing()                                                                 //实现读取TDS传感器值的函数体
+
+   static unsigned long analogSampleTimepoint = millis();
+   if(millis()-analogSampleTimepoint > 40U)     //every 40 milliseconds,read the analog value from the ADC
+   
+ analogSampleTimepoint = millis();
+ analogBufferanalogBufferIndex () = analogRead(TdsSensorPin);    //read the analog value and store into the buffer
+ analogBufferIndex if(analogBufferIndex == SCOUNT) 
+ analogBufferIndex = 0;
+   }   
+   static unsigned long printTimepoint = millis();
+   if(millis()-printTimepoint > 800U)
+   
+  printTimepoint = millis();
+  for(copyIndex=0;copyIndex<SCOUNT;copyIndexanalogBufferTempcopyIndex ()= analogBuffercopyIndex ();
+  averageVoltage = getMedianNum(analogBufferTemp,SCOUNT)  (float)VREF / 1024.0; // read the analog value more stable by the median filtering algorithm, and convert to voltage value
+  float compensationCoefficient=1.0+0.02(temperature-25.0);    //temperature compensation formula: fFinalResult(25^C) = fFinalResult(current)/(1.0+0.02(fTP-25.0));
+  float compensationVolatge=averageVoltage/compensationCoefficient;  //temperature compensation
+  tdsValue=(133.42compensationVolatgecompensationVolatgecompensationVolatge - 255.86compensationVolatgecompensationVolatge + 857.39compensationVolatge)0.5; //convert voltage value to tds value
+  //Serial.print("voltage:");
+  //Serial.print(averageVoltage,2);
+  //Serial.print("V   ");
+  Serial.print("TDS Value:");
+  Serial.print(tdsValue,0);
+  Serial.println("ppm");
+  return tdsValue;
+   }
+}
+int getMedianNum(int bArray (), int iFilterLen) 
+
+  int bTabiFilterLen ();
+  for (byte i = 0; i<iFilterLen; ibTabi () = bArrayi ();
+  int i, j, bTemp;
+  for (j = 0; j < iFilterLen - 1; j  
+for (i = 0; i < iFilterLen - j - 1; i  
+  if (bTabi () > bTabi + 1 ()) 
+
+bTemp = bTabi ();
+  bTabi () = bTabi + 1 ();
+bTabi + 1 () = bTemp;
+   }
+}
+  }
+  if ((iFilterLen & 1) > 0)
+  bTemp = bTab(iFilterLen - 1) / 2 ();
+  else
+  bTemp = (bTabiFilterLen / 2 () + bTabiFilterLen / 2 - 1 ()) / 2;
+  return bTemp;
+}
+
+
+
+
+
+
+
+
+代码融合
+
+1. SD+TDS+LED
+
+
+include <SPI.h>                                                                               //导入头文件
+include <SD.h>
+
+
+
+define TdsSensorPin A1                                                                       //TDS传感器常量宏定义
+define VREF 5.0      // analog reference voltage(Volt) of the ADC
+define SCOUNT  30           // sum of sample point
+int analogBufferSCOUNT ();    // store the analog value in the array, read from ADC
+int analogBufferTempSCOUNT ();
+int analogBufferIndex = 0,copyIndex = 0;
+float averageVoltage = 0,tdsValue = 0,temperature = 25;
+
+int LEDPin = 10;                                                                              //设置LED针脚为10
+
+const int chipSelect = 4;                                                                     //设置sd卡静态变量
+
+File dataFile;                                                                                //设置文件类型对象
+
+
+void setup()                                                                    //setup()部分： 参数初始化，输入输出引脚初始化及监视串口波特率设置
+Serial.begin(115200);                                                           //设置串口监视器波特率
+pinMode(TdsSensorPin,INPUT); 
+pinMode(LEDPin,OUTPUT);                                                         //设置LED针脚
+
+
+
+  Serial.print("Initializing SD card...");                                      //在串口输出“Initializing SD card...”
+
+  // see if the card is present and can be initialized:
+  if (!SD.begin(chipSelect)) 
+Serial.println("Card failed, or not present");                                  //检查sd卡是否已接入，如未接入则报错
+// don't do anything more:
+return;
+  }
+  Serial.println("card initialized.");
+
+
+  // open the file in MicroSD card
+  dataFile = SD.open("datalog.csv", FILEWRITE);                                 //在sd卡中打开文件（如没有同名文件则新建）
+  dataFile.print("TDS");                                                        //在文件中输入首行各项“TDS”及“BLABLA”  通过 ", " 分隔
+  dataFile.print(",");
+  dataFile.println("BLABLA");
+  dataFile.close();                                                             //关闭文件
+  
+}
+
+
+void loop()                                                                     //loop()部分
+  int value;                                                                    //设定变量获取TDS传感器读取到值
+
+  value=tdssensing();
+
+  if(value>=200){                                                               //判断，当TDS传感器读数大于200时点亮LED否则熄灭,延时1s
+  digitalWrite(LEDPin, HIGH);
+  delay(1000);
+}else{
+  digitalWrite(LEDPin, LOW);
+  delay(1000);
+}
+
+  // make a string for assembling the data to log:
+  String dataString = "";                                                        //新建String类型变量用于向文件写入数据
+
+  
+  
+dataString += String(value);                                                     //向String类型变量写入数据，数据间用 ", " 分隔
+
+dataString += ",";
+
+dataString += String("lalala");
+
+
+
+  dataFile = SD.open("datalog.csv", FILEWRITE);                                  //向文件写入数据，并同时输出到串口监视器
+  // if the file is available, write to it:
+  if (dataFile) 
+dataFile.println(dataString);
+dataFile.close();
+// print to the serial port too:
+Serial.println(dataString);
+  }
+  // if the file isn't open, pop up an error:                                    //如未能打开文件，输出报错信息
+  else 
+Serial.println("error opening datalog.csv");
+  }
+
+  delay(1000); // write data once per second                                     //延时1秒
+  
+}
+
+int tdssensing()                                                                 //实现读取TDS传感器值的函数体
+
+   static unsigned long analogSampleTimepoint = millis();
+   if(millis()-analogSampleTimepoint > 40U)     //every 40 milliseconds,read the analog value from the ADC
+   
+ analogSampleTimepoint = millis();
+ analogBufferanalogBufferIndex () = analogRead(TdsSensorPin);    //read the analog value and store into the buffer
+ analogBufferIndex if(analogBufferIndex == SCOUNT) 
+ analogBufferIndex = 0;
+   }   
+   static unsigned long printTimepoint = millis();
+   if(millis()-printTimepoint > 800U)
+   
+  printTimepoint = millis();
+  for(copyIndex=0;copyIndex<SCOUNT;copyIndexanalogBufferTempcopyIndex ()= analogBuffercopyIndex ();
+  averageVoltage = getMedianNum(analogBufferTemp,SCOUNT)  (float)VREF / 1024.0; // read the analog value more stable by the median filtering algorithm, and convert to voltage value
+  float compensationCoefficient=1.0+0.02(temperature-25.0);    //temperature compensation formula: fFinalResult(25^C) = fFinalResult(current)/(1.0+0.02(fTP-25.0));
+  float compensationVolatge=averageVoltage/compensationCoefficient;  //temperature compensation
+  tdsValue=(133.42compensationVolatgecompensationVolatgecompensationVolatge - 255.86compensationVolatgecompensationVolatge + 857.39compensationVolatge)0.5; //convert voltage value to tds value
+  //Serial.print("voltage:");
+  //Serial.print(averageVoltage,2);
+  //Serial.print("V   ");
+  Serial.print("TDS Value:");
+  Serial.print(tdsValue,0);
+  Serial.println("ppm");
+  return tdsValue;
+   }
+}
+int getMedianNum(int bArray (), int iFilterLen) 
+
+  int bTabiFilterLen ();
+  for (byte i = 0; i<iFilterLen; ibTabi () = bArrayi ();
+  int i, j, bTemp;
+  for (j = 0; j < iFilterLen - 1; j  
+for (i = 0; i < iFilterLen - j - 1; i  
+  if (bTabi () > bTabi + 1 ()) 
+
+bTemp = bTabi ();
+  bTabi () = bTabi + 1 ();
+bTabi + 1 () = bTemp;
+   }
+}
+  }
+  if ((iFilterLen & 1) > 0)
+  bTemp = bTab(iFilterLen - 1) / 2 ();
+  else
+  bTemp = (bTabiFilterLen / 2 () + bTabiFilterLen / 2 - 1 ()) / 2;
+  return bTemp;
+}
